@@ -75,6 +75,31 @@ func SetupRouter(apiKey string) *gin.Engine {
 		c.JSON(http.StatusOK, gin.H{"ok": true, "message": "Port deleted successfully"})
 	})
 
+	r.GET("/status", func(c *gin.Context) {
+		status, err := controller.StatusNginx()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true, "status": status})
+	})
+
+	r.POST("/reload", func(c *gin.Context) {
+		if err := controller.ReloadNginx(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true, "message": "Nginx reloaded successfully"})
+	})
+
+	r.POST("/stop", func(c *gin.Context) {
+		if err := controller.StopNginx(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "message": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true, "message": "Nginx stopped successfully"})
+	})
+
 	r.POST("/restart", func(c *gin.Context) {
 		if err := controller.RestartNginx(); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"ok": false, "message": err.Error()})

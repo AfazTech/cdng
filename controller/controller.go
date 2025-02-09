@@ -235,3 +235,20 @@ func getListeningPorts() ([]string, error) {
 
 	return ports, nil
 }
+
+func StatusNginx() (string, error) {
+	cmd := exec.Command("systemctl", "is-active", "nginx")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("Failed to get Nginx status: %v", err)
+	}
+	return string(output), nil
+}
+
+func StopNginx() error {
+	cmd := exec.Command("systemctl", "stop", "nginx")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("Failed to stop Nginx: %v", err)
+	}
+	return nil
+}

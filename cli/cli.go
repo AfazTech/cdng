@@ -64,9 +64,43 @@ var deletePortCmd = &cobra.Command{
 	},
 }
 
+var statusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Get the status of Nginx",
+	Run: func(cmd *cobra.Command, args []string) {
+		status, err := controller.StatusNginx()
+		if err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+		fmt.Println("Nginx Status:", status)
+	},
+}
+
+var reloadCmd = &cobra.Command{
+	Use:   "reload",
+	Short: "Reload Nginx configuration",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := controller.ReloadNginx(); err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+		fmt.Println("Nginx reloaded successfully.")
+	},
+}
+
+var stopCmd = &cobra.Command{
+	Use:   "stop",
+	Short: "Stop Nginx server",
+	Run: func(cmd *cobra.Command, args []string) {
+		if err := controller.StopNginx(); err != nil {
+			log.Fatalf("Error: %v", err)
+		}
+		fmt.Println("Nginx stopped successfully.")
+	},
+}
+
 var restartCmd = &cobra.Command{
 	Use:   "restart",
-	Short: "Restart Nginx",
+	Short: "Restart Nginx server",
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := controller.RestartNginx(); err != nil {
 			log.Fatalf("Error: %v", err)
@@ -100,7 +134,7 @@ var startApiCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.AddCommand(addDomainCmd, deleteDomainCmd, addPortCmd, deletePortCmd, restartCmd, statsCmd, startApiCmd)
+	rootCmd.AddCommand(addDomainCmd, deleteDomainCmd, addPortCmd, deletePortCmd, statusCmd, reloadCmd, stopCmd, restartCmd, statsCmd, startApiCmd)
 }
 
 func StartCLI() {
