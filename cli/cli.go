@@ -11,9 +11,9 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "nginx-cli",
-	Short: "NGINX CLI Tool",
-	Long:  "A command-line tool for managing NGINX configurations and operations.",
+	Use:   "cdng",
+	Short: "NGINX Proxy server Tool",
+	Long:  "A command-line tool for managing NGINX configurations and operations with api:)",
 }
 
 var addDomainCmd = &cobra.Command{
