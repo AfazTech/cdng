@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -142,19 +144,11 @@ func RestartNginx() error {
 }
 
 func GetStats() (string, error) {
-	portsData, err := ioutil.ReadFile(listenConfigPath)
+
+	ports, err := getListeningPorts()
 	if err != nil {
-		return "", fmt.Errorf("Failed to read ports configuration: %v", err)
+		return "", err
 	}
-
-	var ports []string
-	for _, line := range strings.Split(string(portsData), "\n") {
-		if strings.HasPrefix(line, "listen ") {
-			port := strings.Fields(line)[1]
-			ports = append(ports, port)
-		}
-	}
-
 	domains, err := ioutil.ReadDir(domainConfigPath)
 	if err != nil {
 		return "", fmt.Errorf("Failed to read domain configurations: %v", err)
@@ -214,4 +208,30 @@ func GetStats() (string, error) {
 
 func isValidDomain(domain string) bool {
 	return strings.Contains(domain, ".") && len(domain) > 3 && len(domain) < 255
+}
+
+func getListeningPorts() ([]string, error) {
+	file, err := os.Open("/etc/nginx/nginx.conf") // مسیر واقعی را بررسی کن
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var ports []string
+	reg := regexp.MustCompile(`listen\s+(\d+)`) // استخراج فقط عدد پورت
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		matches := reg.FindStringSubmatch(line)
+		if len(matches) > 1 {
+			ports = append(ports, matches[1])
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return ports, nil
 }
