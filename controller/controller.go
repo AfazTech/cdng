@@ -211,14 +211,14 @@ func isValidDomain(domain string) bool {
 }
 
 func getListeningPorts() ([]string, error) {
-	file, err := os.Open("/etc/nginx/nginx.conf") // مسیر واقعی را بررسی کن
+	file, err := os.Open(listenConfigPath)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
 
 	var ports []string
-	reg := regexp.MustCompile(`listen\s+(\d+)`) // استخراج فقط عدد پورت
+	reg := regexp.MustCompile(`listen\s+(\d+)`)
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
