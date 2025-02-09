@@ -19,13 +19,15 @@ if ! apt install nginx certbot jq git vnstat -y; then
 fi
 
 # backup nginx
-mv /etc/nginx /etc/nginx_backup
+backup_name="/etc/nginx_backup_$(date +%Y%m%d_%H%M%S)"
+mv /etc/nginx "$backup_name"
 
 # Clone the repository into /etc
-if ! git clone https://github.com/imafaz/cdng /etc/nginx; then
+if ! git clone https://github.com/imafaz/cdng /etc/cdng; then
     json_response false "Failed to clone repository."
     exit 1
 fi
+mv /etc/cdng/nginx /etc
 
 # Test Nginx configuration
 if ! nginx -t; then
