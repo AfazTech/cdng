@@ -28,6 +28,12 @@ func AddDomain(domain, ip string) error {
 		return errors.New("Invalid IP format")
 	}
 
+	// Attempt to obtain SSL certificate
+	cmd := exec.Command("certbot", "certonly", "--standalone", "-d", domain, "--non-interactive", "--agree-tos", "-m", "admin@"+domain)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("Failed to obtain SSL certificate: %v", err)
+	}
+
 	config := fmt.Sprintf(`server {
 	include /etc/nginx/conf.d/listen.conf;
 	
