@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/load"
 	"github.com/shirou/gopsutil/mem"
 	netStat "github.com/shirou/gopsutil/net"
@@ -28,11 +29,16 @@ func AddDomain(domain, ip string) error {
 		return errors.New("Invalid IP format")
 	}
 
-	// Attempt to obtain SSL certificate
-	cmd := exec.Command("certbot", "certonly", "--standalone", "-d", domain, "--non-interactive", "--agree-tos", "-m", "admin@"+domain)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("Failed to obtain SSL certificate: %v", err)
+	if _, err := os.Stat(domainConfigPath + domain + ".conf"); err == nil {
+		return fmt.Errorf("Domain %s already exists", domain)
 	}
+
+	cmd := exec.Command("certbot", "certonly", "--standalone", "-d", domain, "--non-interactive", "--agree-tos", "-m", "admin@"+domain)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("Failed to obtain SSL certificate: %v\n%s", err, string(output))
+	}
+	fmt.Println("Certbot output:", string(output))
 
 	config := fmt.Sprintf(`server {
 	include /etc/nginx/conf.d/listen.conf;
@@ -55,6 +61,10 @@ func AddDomain(domain, ip string) error {
 }
 
 func DeleteDomain(domain string) error {
+	if _, err := os.Stat(domainConfigPath + domain + ".conf"); os.IsNotExist(err) {
+		return fmt.Errorf("Domain %s does not exist", domain)
+	}
+
 	if err := os.Remove(domainConfigPath + domain + ".conf"); err != nil {
 		return fmt.Errorf("Failed to delete domain configuration: %v", err)
 	}
@@ -65,6 +75,11 @@ func AddPort(port string) error {
 	portNum, err := strconv.Atoi(port)
 	if err != nil || portNum < 1 || portNum > 65535 {
 		return errors.New("Invalid port format")
+	}
+
+	data, err := ioutil.ReadFile(listenConfigPath)
+	if err == nil && strings.Contains(string(data), "listen "+port+";") {
+		return fmt.Errorf("Port %s is already added", port)
 	}
 
 	file, err := os.OpenFile(listenConfigPath, os.O_APPEND|os.O_WRONLY, 0644)
@@ -86,6 +101,10 @@ func DeletePort(port string) error {
 		return fmt.Errorf("Failed to read listen configuration: %v", err)
 	}
 
+	if !strings.Contains(string(data), "listen "+port+";") {
+		return fmt.Errorf("Port %s does not exist", port)
+	}
+
 	newConfig := strings.Replace(string(data), "listen "+port+";\n", "", -1)
 	if err := ioutil.WriteFile(listenConfigPath, []byte(newConfig), 0644); err != nil {
 		return fmt.Errorf("Failed to remove port from configuration: %v", err)
@@ -102,10 +121,26 @@ func ReloadNginx() error {
 	return nil
 }
 
+func RestartNginx() error {
+	cmd := exec.Command("systemctl", "restart", "nginx")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("Failed to restart Nginx: %v", err)
+	}
+	return nil
+}
+
 func GetStats() (map[string]interface{}, error) {
-	ports, err := ioutil.ReadFile(listenConfigPath)
+	portsData, err := ioutil.ReadFile(listenConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to read ports configuration: %v", err)
+	}
+
+	var ports []string
+	for _, line := range strings.Split(string(portsData), "\n") {
+		if strings.HasPrefix(line, "listen ") {
+			port := strings.TrimSpace(strings.TrimPrefix(line, "listen "))
+			ports = append(ports, port)
+		}
 	}
 
 	domains, err := ioutil.ReadDir(domainConfigPath)
@@ -116,6 +151,11 @@ func GetStats() (map[string]interface{}, error) {
 	cpuLoad, err := load.Avg()
 	if err != nil {
 		return nil, fmt.Errorf("Failed to read CPU load: %v", err)
+	}
+
+	cpuCores, err := cpu.Counts(true)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to get CPU core count: %v", err)
 	}
 
 	memInfo, err := mem.VirtualMemory()
@@ -129,25 +169,17 @@ func GetStats() (map[string]interface{}, error) {
 	}
 
 	stats := map[string]interface{}{
-		"ports":          strings.Count(string(ports), "listen "),
+		"ports":          ports,
 		"domain_count":   len(domains),
-		"cpu_load":       cpuLoad.Load1,
-		"total_ram":      memInfo.Total / 1024 / 1024,
-		"used_ram":       memInfo.Used / 1024 / 1024,
-		"cpu_usage":      memInfo.UsedPercent,
-		"upload_bytes":   netStats[0].BytesSent,
-		"download_bytes": netStats[0].BytesRecv,
+		"cpu_load":       fmt.Sprintf("%.2f/%d", cpuLoad.Load1, cpuCores),
+		"total_ram":      fmt.Sprintf("%d MB", memInfo.Total/1024/1024),
+		"used_ram":       fmt.Sprintf("%d MB", memInfo.Used/1024/1024),
+		"cpu_usage":      fmt.Sprintf("%d%%", int(memInfo.UsedPercent)),
+		"upload_bytes":   fmt.Sprintf("%.2f Mb", float64(netStats[0].BytesSent)/125000),
+		"download_bytes": fmt.Sprintf("%.2f Mb", float64(netStats[0].BytesRecv)/125000),
 	}
 
 	return stats, nil
-}
-
-func RestartNginx() error {
-	cmd := exec.Command("systemctl", "restart", "nginx")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("Failed to restart Nginx: %v", err)
-	}
-	return nil
 }
 
 func isValidDomain(domain string) bool {
