@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -9,6 +10,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/load"
@@ -20,6 +22,16 @@ const (
 	domainConfigPath = "/etc/nginx/conf.d/domains/"
 	listenConfigPath = "/etc/nginx/conf.d/listen.conf"
 )
+
+type Stats struct {
+	Ports       []string `json:"ports"`
+	DomainCount int      `json:"domain_count"`
+	CPULoad     string   `json:"cpu_load"`
+	RAMUsage    string   `json:"ram_usage"`
+	CPUUsage    string   `json:"cpu_usage"`
+	Upload      string   `json:"upload"`
+	Download    string   `json:"download"`
+}
 
 func AddDomain(domain, ip string) error {
 	if !isValidDomain(domain) {
@@ -129,57 +141,75 @@ func RestartNginx() error {
 	return nil
 }
 
-func GetStats() (map[string]interface{}, error) {
+func GetStats() (string, error) {
 	portsData, err := ioutil.ReadFile(listenConfigPath)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to read ports configuration: %v", err)
+		return "", fmt.Errorf("Failed to read ports configuration: %v", err)
 	}
 
 	var ports []string
 	for _, line := range strings.Split(string(portsData), "\n") {
 		if strings.HasPrefix(line, "listen ") {
-			port := strings.TrimSpace(strings.TrimPrefix(line, "listen "))
+			port := strings.Fields(line)[1]
 			ports = append(ports, port)
 		}
 	}
 
 	domains, err := ioutil.ReadDir(domainConfigPath)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to read domain configurations: %v", err)
+		return "", fmt.Errorf("Failed to read domain configurations: %v", err)
 	}
 
 	cpuLoad, err := load.Avg()
 	if err != nil {
-		return nil, fmt.Errorf("Failed to read CPU load: %v", err)
+		return "", fmt.Errorf("Failed to read CPU load: %v", err)
 	}
 
 	cpuCores, err := cpu.Counts(true)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to get CPU core count: %v", err)
+		return "", fmt.Errorf("Failed to get CPU core count: %v", err)
 	}
 
 	memInfo, err := mem.VirtualMemory()
 	if err != nil {
-		return nil, fmt.Errorf("Failed to read memory info: %v", err)
+		return "", fmt.Errorf("Failed to read memory info: %v", err)
 	}
 
-	netStats, err := netStat.IOCounters(false)
+	initialNetStats, err := netStat.IOCounters(false)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to get network statistics: %v", err)
+		return "", fmt.Errorf("Failed to get initial network statistics: %v", err)
+	}
+	initialSent := initialNetStats[0].BytesSent
+	initialRecv := initialNetStats[0].BytesRecv
+
+	time.Sleep(1 * time.Second)
+
+	finalNetStats, err := netStat.IOCounters(false)
+	if err != nil {
+		return "", fmt.Errorf("Failed to get final network statistics: %v", err)
+	}
+	finalSent := finalNetStats[0].BytesSent
+	finalRecv := finalNetStats[0].BytesRecv
+
+	uploadSpeed := float64(finalSent-initialSent) * 8 / 1_000_000
+	downloadSpeed := float64(finalRecv-initialRecv) * 8 / 1_000_000
+
+	stats := Stats{
+		Ports:       ports,
+		DomainCount: len(domains),
+		CPULoad:     fmt.Sprintf("%.2f/%d", cpuLoad.Load1, cpuCores),
+		RAMUsage:    fmt.Sprintf("%d/%d MB", memInfo.Used/1024/1024, memInfo.Total/1024/1024),
+		CPUUsage:    fmt.Sprintf("%d%%", int(memInfo.UsedPercent)),
+		Upload:      fmt.Sprintf("%.2f/Mb", uploadSpeed),
+		Download:    fmt.Sprintf("%.2f/Mb", downloadSpeed),
 	}
 
-	stats := map[string]interface{}{
-		"ports":          ports,
-		"domain_count":   len(domains),
-		"cpu_load":       fmt.Sprintf("%.2f/%d", cpuLoad.Load1, cpuCores),
-		"total_ram":      fmt.Sprintf("%d MB", memInfo.Total/1024/1024),
-		"used_ram":       fmt.Sprintf("%d MB", memInfo.Used/1024/1024),
-		"cpu_usage":      fmt.Sprintf("%d%%", int(memInfo.UsedPercent)),
-		"upload_bytes":   fmt.Sprintf("%.2f Mb", float64(netStats[0].BytesSent)/125000),
-		"download_bytes": fmt.Sprintf("%.2f Mb", float64(netStats[0].BytesRecv)/125000),
+	jsonOutput, err := json.MarshalIndent(stats, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("Failed to marshal stats to JSON: %v", err)
 	}
 
-	return stats, nil
+	return string(jsonOutput), nil
 }
 
 func isValidDomain(domain string) bool {
