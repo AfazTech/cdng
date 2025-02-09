@@ -20,7 +20,6 @@ const (
 	listenConfigPath = "/etc/nginx/conf.d/listen.conf"
 )
 
-
 func AddDomain(domain, ip string) error {
 	if !isValidDomain(domain) {
 		return errors.New("Invalid domain format")
@@ -31,12 +30,16 @@ func AddDomain(domain, ip string) error {
 
 	config := fmt.Sprintf(`server {
 	include /etc/nginx/conf.d/listen.conf;
+	
 	server_name %s;
 
-	location / {
-		proxy_pass http:
-	}
-}`, domain, ip)
+    ssl_certificate /etc/letsencrypt/live/%s/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/%s/privkey.pem;
+
+    location / {
+        proxy_pass $scheme://%s:$server_port;
+    }
+}`, domain, domain, domain, ip)
 
 	if err := ioutil.WriteFile(domainConfigPath+domain+".conf", []byte(config), 0644); err != nil {
 		return fmt.Errorf("Failed to write domain configuration: %v", err)
@@ -45,14 +48,12 @@ func AddDomain(domain, ip string) error {
 	return ReloadNginx()
 }
 
-
 func DeleteDomain(domain string) error {
 	if err := os.Remove(domainConfigPath + domain + ".conf"); err != nil {
 		return fmt.Errorf("Failed to delete domain configuration: %v", err)
 	}
 	return ReloadNginx()
 }
-
 
 func AddPort(port string) error {
 	portNum, err := strconv.Atoi(port)
@@ -73,7 +74,6 @@ func AddPort(port string) error {
 	return ReloadNginx()
 }
 
-
 func DeletePort(port string) error {
 	data, err := ioutil.ReadFile(listenConfigPath)
 	if err != nil {
@@ -88,7 +88,6 @@ func DeletePort(port string) error {
 	return ReloadNginx()
 }
 
-
 func ReloadNginx() error {
 	cmd := exec.Command("nginx", "-s", "reload")
 	if err := cmd.Run(); err != nil {
@@ -96,7 +95,6 @@ func ReloadNginx() error {
 	}
 	return nil
 }
-
 
 func GetStats() (map[string]interface{}, error) {
 	ports, err := ioutil.ReadFile(listenConfigPath)
