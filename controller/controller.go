@@ -252,3 +252,11 @@ func StopNginx() error {
 	}
 	return nil
 }
+
+func StartNginx() error {
+	cmd := exec.Command("systemctl", "start", "nginx")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("Failed to start nginx: %v", err)
+	}
+	return nil
+}
