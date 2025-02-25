@@ -46,8 +46,8 @@ func AddDomain(domain, ip string) error {
 	if _, err := os.Stat(domainConfigPath + domain + ".conf"); err == nil {
 		return fmt.Errorf("Domain %s already exists", domain)
 	}
+	cmd := exec.Command("certbot", "certonly", "--webroot", "-w", "/var/www/html", "-d", domain, "--preferred-challenges", "http", "--non-interactive", "--agree-tos", "-m", "admin@"+domain)
 
-	cmd := exec.Command("certbot", "certonly", "--standalone", "-d", domain, "--non-interactive", "--agree-tos", "-m", "admin@"+domain)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("Failed to obtain SSL certificate: %v\n%s", err, string(output))
