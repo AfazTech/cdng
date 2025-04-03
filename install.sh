@@ -18,7 +18,7 @@ backup_name="/etc/nginx_backup_$(date +%Y%m%d_%H%M%S)"
 mv /etc/nginx "$backup_name"
 
 # Clone the repository into /etc
-if ! git clone https://github.com/imafaz/cdng /tmp/cdng; then
+if ! git clone https://github.com/AfazTech/cdng /tmp/cdng; then
     echo "Failed to clone repository."
     exit 1
 fi
