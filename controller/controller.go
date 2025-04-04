@@ -46,18 +46,45 @@ func AddDomain(domain, ip string) error {
 	if _, err := os.Stat(domainConfigPath + domain + ".conf"); err == nil {
 		return fmt.Errorf("Domain %s already exists", domain)
 	}
-	cmd := exec.Command("certbot", "certonly", "--webroot", "-w", "/var/www/html", "-d", domain, "--preferred-challenges", "http", "--non-interactive", "--agree-tos", "-m", "admin@"+domain)
+
+	config := fmt.Sprintf(`server {
+    include /etc/nginx/conf.d/listen.conf;
+    
+    server_name %s;
+
+    ssl_certificate /etc/nginx/ssl/dummy.crt;
+    ssl_certificate_key /etc/nginx/ssl/dummy.key;
+
+location /.well-known/acme-challenge/ {
+        root /var/www/html;
+        try_files $uri $uri/ =404;
+    }
+}`, domain)
+
+	if err := ioutil.WriteFile(domainConfigPath+domain+".conf", []byte(config), 0644); err != nil {
+		return fmt.Errorf("Failed to write domain configuration: %v", err)
+	}
+
+	if err := ReloadNginx(); err != nil {
+		os.Remove(domainConfigPath + domain + ".conf")
+		return fmt.Errorf("Failed to reload Nginx after adding domain: %v", err)
+	}
+	cmd := exec.Command("certbot", "certonly", "--webroot", "-w", "/var/www/html",
+		"-d", domain, "--preferred-challenges", "http", "--non-interactive",
+		"--agree-tos", "-m", "admin@"+domain)
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		os.Remove(domainConfigPath + domain + ".conf")
+		ReloadNginx()
 		return fmt.Errorf("Failed to obtain SSL certificate: %v\n%s", err, string(output))
 	}
 	fmt.Println("Certbot output:", string(output))
 
-	config := fmt.Sprintf(`server {
-	include /etc/nginx/conf.d/listen.conf;
-	
-	server_name %s;
+	sslConfig := fmt.Sprintf(`server {
+    include /etc/nginx/conf.d/listen.conf;
+    
+    server_name %s;
 
     ssl_certificate /etc/letsencrypt/live/%s/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/%s/privkey.pem;
@@ -67,11 +94,19 @@ func AddDomain(domain, ip string) error {
     }
 }`, domain, domain, domain, ip)
 
-	if err := ioutil.WriteFile(domainConfigPath+domain+".conf", []byte(config), 0644); err != nil {
-		return fmt.Errorf("Failed to write domain configuration: %v", err)
+	if err := ioutil.WriteFile(domainConfigPath+domain+".conf", []byte(sslConfig), 0644); err != nil {
+		os.Remove(domainConfigPath + domain + ".conf")
+		ReloadNginx()
+		return fmt.Errorf("Failed to write SSL domain configuration: %v", err)
 	}
 
-	return ReloadNginx()
+	if err := ReloadNginx(); err != nil {
+		os.Remove(domainConfigPath + domain + ".conf")
+		ReloadNginx()
+		return fmt.Errorf("Failed to reload Nginx with SSL configuration: %v", err)
+	}
+
+	return nil
 }
 
 func DeleteDomain(domain string) error {
@@ -129,16 +164,18 @@ func DeletePort(port string) error {
 
 func ReloadNginx() error {
 	cmd := exec.Command("nginx", "-s", "reload")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("Failed to reload Nginx: %v", err)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to stop Bind: %w | output: %s", err, string(output))
 	}
 	return nil
 }
 
 func RestartNginx() error {
 	cmd := exec.Command("systemctl", "restart", "nginx")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("Failed to restart Nginx: %v", err)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to stop Bind: %w | output: %s", err, string(output))
 	}
 	return nil
 }
@@ -237,6 +274,7 @@ func getListeningPorts() ([]string, error) {
 }
 
 func StatusNginx() (string, error) {
+
 	cmd := exec.Command("systemctl", "is-active", "nginx")
 	output, err := cmd.Output()
 	if err != nil {
@@ -247,8 +285,9 @@ func StatusNginx() (string, error) {
 
 func StopNginx() error {
 	cmd := exec.Command("systemctl", "stop", "nginx")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("Failed to stop Nginx: %v", err)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to stop Bind: %w | output: %s", err, string(output))
 	}
 	return nil
 }
